@@ -1,4 +1,4 @@
-from copy import copy
+import copy
 from typing import Optional
 import numpy as np
 import functools
@@ -19,6 +19,7 @@ def env(render_mode=None):
 # Constants for the game
 BOARD_SIZE = (6, 8)
 PLAYER_STARTING_POS = [(2, 1), (3, 6)]
+MOVES = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
 class raw_env(AECEnv):
     metadata = {
@@ -120,18 +121,35 @@ class raw_env(AECEnv):
         return {"observation": observation, "action_mask": action_mask}
 
     @staticmethod
+    def _pos_in_board(self, pos):
+        assert(len(pos) == 2)
+        return all(0 <= i < j for i, j in zip(pos, self.board_size))
+
+    @staticmethod
     def _legal_moves(self, agent):
         """
-        Returns [0/1/2/3 * row * col]
-        for every valid L/R/U/D * row * col of tile to be removed
+        Returns [0/1/2/3 x row x col]
+        for every valid L/R/U/D x row x col of tile to be removed
         """
         cur_player = self.possible_agents.index(agent)
-    
-        # TODO
-        pass
+        cur_pos = np.argwhere(self.board == cur_player + 1)
+        legal_moves = []
 
+        for i, move_dir in enumerate(MOVES):
+            new_pos = (cur_pos[0] + move_dir[0], cur_pos[1] + move_dir[1])
+            if self._pos_in_board(new_pos) and self.board[new_pos] == 0:
+                # Add the valid move direction and resulting free positions
+                # re-create the board to find the free positions
+                tmp_board = copy.deepcopy(self.board)
+                tmp_board[cur_pos] = 0
+                tmp_board[new_pos] = cur_player + 1
 
-    
+                for remove_pos in np.argwhere(tmp_board == 0):
+                    legal_moves.append(i * self.board_size[0] * self.board_size[1] \
+                                            + remove_pos[0] * self.board_size[0] \
+                                            + remove_pos[1])
+
+        return legal_moves  
 
     def step(self, action):
         """
@@ -145,6 +163,25 @@ class raw_env(AECEnv):
         - agent_selection (to the next agent)
         And any internal state used by observe() or render()
         """
+        if (
+            self.terminations[self.agent_selection]
+            or self.truncations[self.agent_selection]
+        ):
+            # handles stepping an agent which is already dead
+            # accepts a None action for the one agent, and moves the agent_selection to
+            # the next dead agent,  or if there are no more dead agents, to the next live agent
+            self._was_dead_step(action)
+            return
+        
+        # Disaggregate action
+        move_dir = MOVES[action // (self.board_size[0] * self.board_size[1])]
+        remove_pos = [0, 0]
+        remove_pos[0] = (action % (self.board_size[0] * self.board_size[1])) // self.board_size[0]
+        remove_pos[1] = action % self.board_size[0]
+        assert(self._pos_in_board(remove_pos))
+
+        # Update board
+        agent = self.agent_selection
 
         # TODO
         pass
