@@ -2,6 +2,7 @@ import pygame
 import numpy as np
 import sys
 import random
+import copy
 
 # Constants for the game
 BOARD_SIZE = (6, 8)
@@ -78,73 +79,87 @@ class IsolationGame:
         self.board[remove_pos] = 3
         return True
 
-    # TO FIX (maybe): actions_move always valid. Actions_remove depends on choice of actions_move
-    def get_valid_moves(self, position):
-        actions_move = []
+    # # TO FIX (maybe): actions_move always valid. Actions_remove depends on choice of actions_move
+    # def get_valid_moves(self, position):
+    #     actions_move = []
+    #     for move_dir in ACTIONS_MOVE.values():
+    #         new_pos = (position[0] + move_dir[0], position[1] + move_dir[1])
+    #         if self._pos_in_board(new_pos) and self.board[new_pos] == 0:
+    #             actions_move.append(move_dir)
+        
+    #     actions_remove = np.where((self.board == 0) | (self.board == self.current_player + 1))
+    #     actions_remove = list(zip(actions_remove[0], actions_remove[1]))
+    #     return [actions_move, actions_remove]
+
+    def get_valid_moves(self, cur_player):
+        position = self.player_positions[cur_player]
+        # print("cur_player", cur_player, "position", position) #debug line
+        
+        valid_moves = []
         for move_dir in ACTIONS_MOVE.values():
             new_pos = (position[0] + move_dir[0], position[1] + move_dir[1])
             if self._pos_in_board(new_pos) and self.board[new_pos] == 0:
-                actions_move.append(move_dir)
+                # Add the valid move direction and resulting free positions
+                # re-create the board to find the free positions
+                tmp_board = copy.deepcopy(self.board)
+                tmp_board[position] = 0
+                tmp_board[new_pos] = cur_player+1
+
+                actions_remove = np.where((tmp_board == 0))
+                actions_remove = list(zip(actions_remove[0], actions_remove[1]))
+                valid_moves.append((move_dir, actions_remove))
         
-        actions_remove = np.where((self.board == 0) | (self.board == self.current_player + 1))
-        actions_remove = list(zip(actions_remove[0], actions_remove[1]))
-        return [actions_move, actions_remove]
+        return valid_moves
 
     def bot_move(self):
         cur_pos = self.player_positions[self.current_player]
-        valid_moves = self.get_valid_moves(cur_pos)
-        if valid_moves[0] and valid_moves[1]:
-            while True:
-                # Pick random move and remove
-                # Move guaranteed valid by self.get_valid_moves
-                # Remove depends on choice of move
-                move_dir = random.choice(valid_moves[0])
-                remove_pos = random.choice(valid_moves[1])
-                new_pos = (cur_pos[0] + move_dir[0], cur_pos[1] + move_dir[1])
-                cond_remove = (remove_pos == cur_pos) \
-                        or (remove_pos != new_pos and self.board[remove_pos] == 0)
-                if cond_remove:
-                    # Move
-                    self.board[cur_pos] = 0
-                    self.board[new_pos] = self.current_player + 1
-                    self.player_positions[self.current_player] = new_pos
+        valid_moves = self.get_valid_moves(self.current_player)
+        if len(valid_moves) == 0: return False
 
-                    # Remove
-                    self.board[remove_pos] = 3
-                    return
+        random_move = random.choice(valid_moves)
+        random_remove = random.choice(random_move[1])
+        move_dir = random_move[0]
+
+        # Move
+        new_pos = (cur_pos[0] + move_dir[0], cur_pos[1] + move_dir[1])
+        self.board[cur_pos] = 0
+        self.board[new_pos] = self.current_player + 1
+        self.player_positions[self.current_player] = new_pos
+
+        # Remove
+        self.board[random_remove] = 3
+        return True
 
     def check_game_over(self):          # TO FIX: BUG: currently only checks can move, not can remove
         cur_pos = self.player_positions[self.current_player]
-        return not self.get_valid_moves(cur_pos)[0]
+        return not self.get_valid_moves(self.current_player)[0]
 
     def run(self):
         running = True
         human_move_made = False
         while running:
             self.clock.tick(30)
-
-            # Human player's turn (Player 1) -- move
-            if self.current_player == 0 and not human_move_made:
-                # Human move
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            running = False
-                            break
-                        elif event.type == pygame.KEYDOWN and event.key in ACTIONS_MOVE:
-                            if self.player_move(self.player_positions[self.current_player], ACTIONS_MOVE[event.key]):
-                                human_move_made = True
-                                if self.check_game_over():
-                                    print("Bot wins!")
-                                    running = False
-                                break
-            
-            # Human player's turn (Player 1) -- remove
-            elif self.current_player == 0 and human_move_made:
-                if len(np.where(self.board == 0)) == 0:
-                    print("Bot wins!")
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     running = False
-                else:
-                    for event in pygame.event.get():
+                    break
+                
+                # Human player's turn (Player 1) -- move
+                if self.current_player == 0 and not human_move_made:
+                    if event.type == pygame.KEYDOWN and event.key in ACTIONS_MOVE:
+                        if self.player_move(self.player_positions[self.current_player], ACTIONS_MOVE[event.key]):
+                            human_move_made = True
+                            # if self.check_game_over():
+                            #     print("Bot wins!")
+                            #     running = False
+                            # break
+                
+                # Human player's turn (Player 1) -- remove
+                elif self.current_player == 0 and human_move_made:
+                    if len(np.where(self.board == 0)) == 0:
+                        print("Bot wins!")
+                        running = False
+                    else:
                         if event.type == pygame.MOUSEBUTTONDOWN:
                             x, y = event.pos
                             col = x // TILE_SIZE
@@ -153,17 +168,55 @@ class IsolationGame:
                                 self.board[row, col] = 3
                                 human_move_made = False
                                 self.current_player = 1  # Switch to bot
-                                break        
+                                break 
+
+
+            # # Human player's turn (Player 1) -- move
+            # if self.current_player == 0 and not human_move_made:
+            #     # Human move
+            #         for event in pygame.event.get():
+            #             if event.type == pygame.QUIT:
+            #                 running = False
+            #                 break
+            #             elif event.type == pygame.KEYDOWN and event.key in ACTIONS_MOVE:
+            #                 if self.player_move(self.player_positions[self.current_player], ACTIONS_MOVE[event.key]):
+            #                     human_move_made = True
+            #                     if self.check_game_over():
+            #                         print("Bot wins!")
+            #                         running = False
+            #                     break
+            
+            # # Human player's turn (Player 1) -- remove
+            # elif self.current_player == 0 and human_move_made:
+            #     if len(np.where(self.board == 0)) == 0:
+            #         print("Bot wins!")
+            #         running = False
+            #     else:
+            #         for event in pygame.event.get():
+            #             if event.type == pygame.MOUSEBUTTONDOWN:
+            #                 x, y = event.pos
+            #                 col = x // TILE_SIZE
+            #                 row = y // TILE_SIZE
+            #                 if self.board[row, col] == 0:
+            #                     self.board[row, col] = 3
+            #                     human_move_made = False
+            #                     self.current_player = 1  # Switch to bot
+            #                     break        
 
             # Bot's turn (Player 2)
-            elif self.current_player == 1:
+            if self.current_player == 1:
                 pygame.time.delay(500)  # Add a small delay for bot move visualization
-                self.bot_move()
-                if self.check_game_over():
+                if not self.bot_move():
                     print("Human wins!")
                     running = False
-                else:
-                    self.current_player = 0  # Switch to human
+                    break
+                
+                self.current_player = 0
+                player_validmoved = self.get_valid_moves(0)
+                if len(player_validmoved) == 0:
+                    print("Bot wins!")
+                    running = False
+                    break
 
             self.draw_board()
             pygame.display.flip()
