@@ -11,7 +11,7 @@ WINDOW_SIZE = (BOARD_SIZE[1] * TILE_SIZE, BOARD_SIZE[0] * TILE_SIZE)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 PLAYER_COLORS = [(0, 128, 255), (255, 0, 128)]
-PLAYER_STARTING_POS = [(2, 0), (3, 7)]
+PLAYER_STARTING_POS = [(2, 1), (3, 6)]
 BLOCK_COLOR = (128, 128, 128)
 
 # Action mappings for arrow keys
