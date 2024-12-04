@@ -11,5 +11,6 @@ dependencies:
   - jaxtyping  # shape annotations
   - gymnasium[classic-control]  # environment
   - stable-baselines3=2.3.*  # expert policy
+  - sb3-contrib>=2.0.0
   - pytorch=2.3.*  # training
   - pygame=2.5.*  # classic control
