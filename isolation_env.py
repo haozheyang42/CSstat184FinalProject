@@ -36,6 +36,20 @@ class raw_env(AECEnv):
         "render_fps": 1,
     }
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Exclude non-pickleable pygame objects
+        state.pop("screen", None)
+        state.pop("clock", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Reinitialize pygame objects if needed
+        if self.render_mode == "human":
+            self.clock = pygame.time.Clock()
+        self.screen = None  # Reset the screen to None
+
     def __init__(self, render_mode=None, board_size=BOARD_SIZE, init_pos=PLAYER_STARTING_POS):
         super().__init__()
 
@@ -237,8 +251,7 @@ class raw_env(AECEnv):
         self._accumulate_rewards()
         if self.render_mode == "human":
             self.render()
-    
-        
+
     def render(self):
         """
         Renders the environment. In human mode, it can print to terminal, open
@@ -249,39 +262,41 @@ class raw_env(AECEnv):
 
         if self.screen is None:
             pygame.init()
-            
             if self.render_mode == "human":
                 pygame.display.set_caption("Isolation Game")
                 self.screen = pygame.display.set_mode((screen_width, screen_height))
             elif self.render_mode == "rgb_array":
                 self.screen = pygame.Surface((screen_width, screen_height))
 
-        self.screen.fill(WHITE)
-        for row in range(self.board_size[0]):
-            for col in range(self.board_size[1]):
-                rect = pygame.Rect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-                if self.board[row, col] == -1:
-                    pygame.draw.rect(self.screen, BLOCK_COLOR, rect)
-                elif self.board[row, col] == 1:
-                    pygame.draw.rect(self.screen, PLAYER_COLORS[0], rect)
-                elif self.board[row, col] == 2:
-                    pygame.draw.rect(self.screen, PLAYER_COLORS[1], rect)
-                pygame.draw.rect(self.screen, BLACK, rect, 2)
+        if self.screen:  # Only proceed if the screen is successfully initialized
+            self.screen.fill(WHITE)
+            for row in range(self.board_size[0]):
+                for col in range(self.board_size[1]):
+                    rect = pygame.Rect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                    if self.board[row, col] == -1:
+                        pygame.draw.rect(self.screen, BLOCK_COLOR, rect)
+                    elif self.board[row, col] == 1:
+                        pygame.draw.rect(self.screen, PLAYER_COLORS[0], rect)
+                    elif self.board[row, col] == 2:
+                        pygame.draw.rect(self.screen, PLAYER_COLORS[1], rect)
+                    pygame.draw.rect(self.screen, BLACK, rect, 2)
 
-        if self.render_mode == "human":
-            pygame.event.pump()
-            pygame.display.update()
-            self.clock.tick(self.metadata["render_fps"])
+            if self.render_mode == "human":
+                pygame.event.pump()
+                pygame.display.update()
+                self.clock.tick(self.metadata["render_fps"])
 
-        observation = np.array(pygame.surfarray.pixels3d(self.screen))
+            observation = np.array(pygame.surfarray.pixels3d(self.screen))
 
-        return (
-            np.transpose(observation, axes=(1, 0, 2))
-            if self.render_mode == "rgb_array"
-            else None
-        )
-      
+            # Debugging output
+            if self.render_mode == "rgb_array":
+                print(f"Rendered frame shape: {observation.shape}, dtype: {observation.dtype}")
 
+            return (
+                np.transpose(observation, axes=(1, 0, 2))
+                if self.render_mode == "rgb_array"
+                else None
+            )
 
     def close(self):
         """
