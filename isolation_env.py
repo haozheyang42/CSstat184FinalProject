@@ -20,9 +20,14 @@ BLACK = (0, 0, 0)
 PLAYER_COLORS = [(0, 128, 255), (255, 0, 128)]
 BLOCK_COLOR = (128, 128, 128)
 
-def env(render_mode=None, board_size=BOARD_SIZE, init_pos=PLAYER_STARTING_POS):
+def env(render_mode=None, shaping=False, board_size=BOARD_SIZE, init_pos=PLAYER_STARTING_POS):
     internal_render_mode = render_mode if render_mode != "ansi" else "human"
-    env = raw_env(render_mode=internal_render_mode)
+
+    if shaping:
+        env = raw_env_with_shaping(render_mode=internal_render_mode, board_size=board_size, init_pos=init_pos)
+    else:
+        env = raw_env(render_mode=internal_render_mode, board_size=board_size, init_pos=init_pos)
+    
     if render_mode == "ansi":       # Print to terminal
         env = wrappers.CaptureStdoutWrapper(env)
     env = wrappers.AssertOutOfBoundsWrapper(env)
@@ -56,6 +61,7 @@ class raw_env(AECEnv):
         self.board_size = board_size
         self.init_pos = init_pos
         self.possible_agents = ["player_0", "player_1"]
+        self.agents = self.possible_agents[:]
         self.agent_name_mapping = dict(zip(self.possible_agents, range(len(self.possible_agents))))
 
         # Action space: move direction, tile to remove
@@ -80,7 +86,6 @@ class raw_env(AECEnv):
                         shape=(4 * self.board_size[0] * self.board_size[1],), 
                         dtype=np.int8
                     ),
-                    # Discrete(4 * self.board_size[0] * self.board_size[1])
                 }
             )
             for agent in self.possible_agents
@@ -102,6 +107,8 @@ class raw_env(AECEnv):
     def action_space(self, agent):
         return self._action_spaces[agent]
     
+    def seed(self, seed):
+        np.random.seed(seed)
 
     def reset(self, seed=None, options=None):
         
@@ -307,4 +314,69 @@ class raw_env(AECEnv):
         if self.screen is not None:
             pygame.quit()
             self.screen = None
-    
+
+class raw_env_with_shaping(raw_env):
+    def step(self, action):
+        if (
+            self.terminations[self.agent_selection]
+            or self.truncations[self.agent_selection]
+        ):
+            self._was_dead_step(action)
+            return
+        
+        # Disaggregate action
+        move_idx, remove_pos = self._decode_action(action) 
+        move_dir = MOVES[move_idx]
+        
+        # Move
+        agent = self.agent_selection
+        cur_player = self.possible_agents.index(agent)
+        cur_pos = tuple(np.argwhere(self.board == cur_player + 1)[0])
+        new_pos = (cur_pos[0] + move_dir[0], cur_pos[1] + move_dir[1])
+        assert(self._pos_in_board(new_pos) and self.board[new_pos] == 0)
+
+        self.board[cur_pos] = 0
+        self.board[new_pos] = cur_player + 1
+
+        # Remove
+        assert(self._pos_in_board(remove_pos) and self.board[remove_pos] == 0)
+        self.board[remove_pos] = -1
+
+        # If next agent has no legal moves, then current agent wins
+        next_agent = self._agent_selector.next()
+
+        if not self._legal_moves(next_agent):
+            self.rewards[self.agent_selection] += 1
+            self.rewards[next_agent] -= 1
+            self.terminations = {i: True for i in self.agents}
+
+        else:
+            # Shaping rewards
+            pos1 = (new_pos[0] - 1, new_pos[1])
+            pos2 = (new_pos[0] + 1, new_pos[1])
+            pos3 = (new_pos[0], new_pos[1] - 1)
+            pos4 = (new_pos[0], new_pos[1] + 1)
+            
+            for p in (pos1, pos2, pos3, pos4):
+                if self._pos_in_board(p) and self.board[p] == 0:
+                    self.rewards[self.agent_selection] += 0.002
+
+            opp_player = (cur_player + 1) % 2
+            opp_pos = tuple(np.argwhere(self.board == opp_player + 1)[0])
+
+            pos1 = (opp_pos[0] - 1, opp_pos[1])
+            pos2 = (opp_pos[0] + 1, opp_pos[1])
+            pos3 = (opp_pos[0], opp_pos[1] - 1)
+            pos4 = (opp_pos[0], opp_pos[1] + 1)
+            
+            for p in (pos1, pos2, pos3, pos4):
+                if (not self._pos_in_board(p)) or self.board[p] != 0:
+                    self.rewards[self.agent_selection] += 0.002
+
+
+        # Next step
+        self.agent_selection = next_agent
+        self._accumulate_rewards()
+        if self.render_mode == "human":
+            self.render()
+

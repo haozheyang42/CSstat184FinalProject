@@ -1,2 +1,0 @@
-class IsolationBot(IsolationGame):
-    pass
