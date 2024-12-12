@@ -22,9 +22,12 @@ from tianshou.trainer import offpolicy_trainer
 from tianshou.utils import TensorboardLogger
 from tianshou.utils.net.common import Net
 
+from tianshou_heuristic_policy import HeuristicPolicy
 
-def get_env(render_mode=None):
-    return PettingZooEnv(isolation_env.env(render_mode=render_mode, shaping=True, board_size=(4,6), init_pos=[(1, 1), (2, 4)]))
+BOARD_SIZE = (6,8)
+
+def get_env(render_mode=None, shaping=True):
+    return PettingZooEnv(isolation_env.env(board_size=BOARD_SIZE, render_mode=render_mode, shaping=shaping))
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -39,13 +42,13 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument('--n-step', type=int, default=3)
     parser.add_argument('--target-update-freq', type=int, default=320)
-    parser.add_argument('--epoch', type=int, default=200)
+    parser.add_argument('--epoch', type=int, default=500)
     parser.add_argument('--step-per-epoch', type=int, default=2000)
     parser.add_argument('--step-per-collect', type=int, default=2000)
     parser.add_argument('--update-per-step', type=float, default=0.1)
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument(
-        '--hidden-sizes', type=int, nargs='*', default=[128, 128, 128, 128]
+        '--hidden-sizes', type=int, nargs='*', default=[512, 512, 512]
     )
     parser.add_argument('--training-num', type=int, default=100)
     parser.add_argument('--test-num', type=int, default=10)
@@ -63,6 +66,18 @@ def get_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='no training, '
         'watch the play of pre-trained models'
+    )
+    parser.add_argument(
+        '--eval',
+        action='store_true'
+    )
+    parser.add_argument(
+        '--train-on-self',
+        action='store_true'
+    )
+    parser.add_argument(
+        '--heuristic-opponent',
+        action='store_true'
     )
     parser.add_argument(
         '--agent-id',
@@ -123,16 +138,30 @@ def get_agents(
             args.n_step,
             target_update_freq=args.target_update_freq
         )
+
+        if args.train_on_self:
+            print("Train on self -- learner")
+            args.resume_path = "log\isolation\dqn\policy.pth"
+
         if args.resume_path:
+            print("Loading path -- learner")
             agent_learn.load_state_dict(torch.load(args.resume_path))
 
     if agent_opponent is None:
-        if args.opponent_path:
+        if args.train_on_self:
+            print("Train on self -- opponent")
+            agent_opponent = deepcopy(agent_learn)
+            agent_opponent.load_state_dict(torch.load(args.resume_path))
+        elif args.opponent_path:
+            print("Loading path -- opponent")
             agent_opponent = deepcopy(agent_learn)
             agent_opponent.load_state_dict(torch.load(args.opponent_path))
+        elif args.heuristic_opponent:
+            print("Opponent using heuristic policy")
+            agent_opponent = HeuristicPolicy(board_size=BOARD_SIZE)
         else:
+            print("Opponent using random policy")
             agent_opponent = RandomPolicy()
-            # agent_opponent = agent_learn
 
     if args.agent_id == 1:
         agents = [agent_learn, agent_opponent]
@@ -232,7 +261,7 @@ def watch(
     agent_learn: Optional[BasePolicy] = None,
     agent_opponent: Optional[BasePolicy] = None,
 ) -> None:
-    env = get_env(render_mode="human")
+    env = get_env(render_mode="human", shaping=False)
     env = DummyVectorEnv([lambda: env])
     policy, optim, agents = get_agents(
         args, agent_learn=agent_learn, agent_opponent=agent_opponent
@@ -244,10 +273,43 @@ def watch(
     rews, lens = result["rews"], result["lens"]
     print(f"Final reward: {rews[:, args.agent_id - 1].mean()}, length: {lens.mean()}")
 
+
+# ======== a test function that tests a pre-trained agent ======
+def eval(
+    args: argparse.Namespace = get_args(),
+    agent_learn: Optional[BasePolicy] = None,
+    agent_opponent: Optional[BasePolicy] = None,
+) -> None:
+    env = get_env(render_mode=None, shaping=False)
+    env = DummyVectorEnv([lambda: env])
+
+    # Current player uses DQN
+    # Opponent uses random or heuristic policy
+    args.resume_path = "log\isolation\dqn\policy.pth"
+    args.opponent_path = None
+
+    policy, optim, agents = get_agents(
+        args, agent_learn=agent_learn, agent_opponent=agent_opponent
+    )
+    policy.eval()
+    policy.policies[agents[args.agent_id - 1]].set_eps(args.eps_test)
+    collector = Collector(policy, env, exploration_noise=True)
+    result = collector.collect(n_episode=30, render=args.render)
+    rews, lens = result["rews"], result["lens"]
+
+    print("Evaluation mode: shaping rewards turned off")
+    print("Games played: ", len(rews))
+    assert(all(i in (-1, 1) for i in rews[:, args.agent_id - 1]))
+    print("Number won: ", len([i for i in rews[:, args.agent_id - 1] if i > 0]))
+
+    print(f"Final reward: {rews[:, args.agent_id - 1].mean()}, length: {lens.mean()}")
+
 #################################################
 # train the agent and watch its performance in a match!
 args = get_args()
-if not args.watch:
-    result, agent = train_agent(args)
-else:
+if args.eval:
+    eval(args)
+elif args.watch:
     watch(args)
+else:
+    result, agent = train_agent(args)
