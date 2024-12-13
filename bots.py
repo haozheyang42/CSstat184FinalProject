@@ -135,6 +135,8 @@ class MCTSBot(BaseBot):
         super().__init__(board_size=board_size)
         self.exploration_weight = exploration_weight
 
+        self.STATE_LEN = 12
+
         self.ROTATIONS = np.array([
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],  # 0° (no rotation)
             [7, 3, 6, 10, 0, 2, 9, 11, 1, 5, 8, 4],  # 90° CW
@@ -142,52 +144,46 @@ class MCTSBot(BaseBot):
             [4, 8, 5, 1, 11, 9, 2, 0, 10, 6, 3, 7]   # 270° CW
         ])
 
-        binary_combinations = list(product([0, 1], repeat=12))
+        # binary_combinations = list(product([0, 1], repeat=self.STATE_LEN))
 
-        self.unique_patterns = set()
-        for comb in binary_combinations:
-            array = np.array(comb)
-            canonical = self._canonical_rotation(array)
-            self.unique_patterns.add(tuple(canonical))
+        # self.unique_patterns = set()
+        # for comb in binary_combinations:
+        #     array = np.array(comb)
+        #     canonical = self._canonical_rotation(array)
+        #     self.unique_patterns.add(tuple(canonical))
 
-        self.STAR_STATES = [np.array(p) for p in self.unique_patterns]
+        # self.STAR_STATES = [np.array(p) for p in self.unique_patterns]
         self.STAR_MOVES = np.array([(-2, 0), \
                           (-1, -1), (-1, 0), (-1, 1), \
                   (0, -2), (0, -1),          (0, 1), (0, 2), \
                            (1, -1),  (1, 0), (1, 1), \
                                      (2, 0)])
 
-        self.STATS_MOVE_VISITED = {
-            p: 1
-            for p in self.unique_patterns
-        }
-        self.STATS_MOVE_WON = copy.deepcopy(self.STATS_MOVE_VISITED)
-        self.STATS_REMOVE_VISITED = copy.deepcopy(self.STATS_MOVE_VISITED)
-        self.STATS_REMOVE_WON = copy.deepcopy(self.STATS_MOVE_VISITED)
+        self.STATS_MOVE_VISITED = dict()
+        self.STATS_MOVE_WON = dict()
+        self.STATS_REMOVE_VISITED = dict()
+        self.STATS_REMOVE_WON = dict()
 
-        self.THIS_MOVE_VISITED = {
-            p: 0
-            for p in self.unique_patterns
-        }
-        self.THIS_REMOVE_VISITED = copy.deepcopy(self.THIS_MOVE_VISITED)
+        self.THIS_MOVE_VISITED = set()
+        self.THIS_REMOVE_VISITED = set()
 
     def _canonical_rotation(self, array):
         """Find the lexicographically smallest rotation of a given array"""
-        assert(len(array) == 12)
-        assert(all(array[i] in (0,1) for i in range(12)))
+        assert(len(array) == self.STATE_LEN)
+        # assert(all(array[i] in (0,1) for i in range(self.STATE_LEN)))
         rotated = [tuple(array[rotation]) for rotation in self.ROTATIONS]
         return np.array(min(rotated))
 
     def _ucb_score_move(self, rotated_state):
-        if any(rotated_state == -1):
+        if all(rotated_state == -1):
             return -1
 
-        w, v = self.STATS_MOVE_WON[tuple(rotated_state)], self.STATS_MOVE_VISITED[tuple(rotated_state)]
+        w, v = self.STATS_MOVE_WON.get(tuple(rotated_state), 1), self.STATS_MOVE_VISITED.get(tuple(rotated_state),1)
         assert(w <= v)
         return w / v + self.exploration_weight * np.sqrt(np.log(v) / v)
     
     def _ucb_score_remove(self, rotated_state):
-        w, v = self.STATS_REMOVE_WON[tuple(rotated_state)], self.STATS_REMOVE_VISITED[tuple(rotated_state)]
+        w, v = self.STATS_REMOVE_WON.get(tuple(rotated_state), 1), self.STATS_REMOVE_VISITED.get(tuple(rotated_state), 1)
         assert(w <= v)
         return w / v + self.exploration_weight * np.sqrt(np.log(v) / v)
     
@@ -203,10 +199,10 @@ class MCTSBot(BaseBot):
         opp_pos = tuple(np.argwhere(obs[:, :, 1] == 1)[0]) 
 
         # Add visited states to THIS
-        cur_star_state = np.ones(12)
-        opp_star_state = np.ones(12)
+        cur_star_state = np.ones(self.STATE_LEN)
+        opp_star_state = np.ones(self.STATE_LEN)
 
-        for i in range(12):
+        for i in range(self.STATE_LEN):
             move = self.STAR_MOVES[i]
             cur_consider = self._add_move(cur_pos, move)
             opp_consider = self._add_move(opp_pos, move)
@@ -226,8 +222,8 @@ class MCTSBot(BaseBot):
         rot_move = tuple(self._canonical_rotation(cur_star_state))
         rot_remove = tuple(self._canonical_rotation(opp_star_state))
 
-        self.THIS_MOVE_VISITED[rot_move] += 1
-        self.THIS_REMOVE_VISITED[rot_remove] += 1
+        self.THIS_MOVE_VISITED.add(rot_move)
+        self.THIS_REMOVE_VISITED.add(rot_remove)
 
 
         # Move: compute new stars for possible moves
@@ -240,12 +236,12 @@ class MCTSBot(BaseBot):
             if not self._pos_in_board(new_pos) \
                 or obs[:, :, 1][new_pos] != 0 \
                 or obs[:, :, 2][new_pos] != 0: 
-                cur_next_states.append(np.ones(12) * -1)
+                cur_next_states.append(np.ones(self.STATE_LEN) * -1)
                 continue
 
-            s = np.ones(12)
+            s = np.ones(self.STATE_LEN)
 
-            for i in range(12):
+            for i in range(self.STATE_LEN):
                 move = self.STAR_MOVES[i]
                 consider = self._add_move(cur_pos, move)
 
@@ -266,24 +262,24 @@ class MCTSBot(BaseBot):
         new_pos = self._add_move(cur_pos, MOVES[move_idx])
 
         # Remove: construct star state
-        opp_star_state = np.ones(12)
+        # opp_star_state = np.ones(self.STATE_LEN)
 
-        for i in range(12):
-            move = self.STAR_MOVES[i]
-            opp_consider = self._add_move(opp_pos, move)
+        # for i in range(self.STATE_LEN):
+        #     move = self.STAR_MOVES[i]
+        #     opp_consider = self._add_move(opp_pos, move)
 
-            # If not in board, occupied by self, removed
-            if not self._pos_in_board(opp_consider) \
-                or obs[:, :, 0][opp_consider] != 0 \
-                or obs[:, :, 2][opp_consider] != 0:
+        #     # If not in board, occupied by self, removed
+        #     if not self._pos_in_board(opp_consider) \
+        #         or obs[:, :, 0][opp_consider] != 0 \
+        #         or obs[:, :, 2][opp_consider] != 0:
                 
-                opp_star_state[i] = 0
+        #         opp_star_state[i] = 0
 
         # Remove: construct next star states and pick best remove
         best_remove_i = []
         best_remove_score = -np.inf
 
-        for i in range(12):
+        for i in range(self.STATE_LEN):
             if opp_star_state[i] == 0:
                 continue
             
@@ -312,24 +308,256 @@ class MCTSBot(BaseBot):
         
     def learn(self, observation, reward):
         # Update statistics
-        for k, v in self.THIS_MOVE_VISITED.items():
-            if v > 0:
-                self.STATS_MOVE_VISITED[k] += 1
-                if reward == 1:
-                    self.STATS_MOVE_WON[k] += 1
-        
-        for k, v in self.THIS_REMOVE_VISITED.items():
-            if v > 0:
-                self.STATS_REMOVE_VISITED[k] += 1
-                if reward == 1:
-                    self.STATS_REMOVE_WON[k] += 1
-
-        # Reset trackers
         for k in self.THIS_MOVE_VISITED:
-            self.THIS_MOVE_VISITED[k] = 0
+            self.STATS_MOVE_VISITED[k] = self.STATS_MOVE_VISITED.get(k, 0) + 1
+            if reward == 1:
+                self.STATS_MOVE_WON[k] = self.STATS_MOVE_WON.get(k, 0) + 1
         
         for k in self.THIS_REMOVE_VISITED:
-            self.THIS_REMOVE_VISITED[k] = 0
+            self.STATS_REMOVE_VISITED[k] = self.STATS_REMOVE_VISITED.get(k, 0) + 1
+            if reward == 1:
+                self.STATS_REMOVE_WON[k] = self.STATS_REMOVE_WON.get(k, 0) + 1
+
+        # Reset trackers
+        self.THIS_MOVE_VISITED = set()
+        self.THIS_REMOVE_VISITED = set()
+
+class MCTSRicherBot(MCTSBot):
+    """
+    -2: Not in Board
+    -1: Occupied by Other Player
+    0: Removed
+    1: Vacant
+    """
+    def __init__(self, board_size, exploration_weight=1.0):
+        super().__init__(board_size=board_size)
+        self.exploration_weight = exploration_weight
+
+        self.STATE_LEN = 12
+
+        self.ROTATIONS = np.array([
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],  # 0° (no rotation)
+            [7, 3, 6, 10, 0, 2, 9, 11, 1, 5, 8, 4],  # 90° CW
+            [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],  # 180° CW
+            [4, 8, 5, 1, 11, 9, 2, 0, 10, 6, 3, 7]   # 270° CW
+        ])
+
+        # permutations = list(product([-2, 0, 1], repeat=12))
+
+        # permutations_with_one_3 = []
+        # for i in range(12):
+        #     for perm in product([-2, 0, 1], repeat=11):
+        #         # Insert '3' at position i
+        #         new_perm = list(perm)
+        #         new_perm.insert(i, -1)
+        #         permutations_with_one_3.append(tuple(new_perm))
+
+        # # Combine both lists
+        # binary_combinations = permutations + permutations_with_one_3
+        # print(len(binary_combinations))
+
+        # self.unique_patterns = set()
+        # for comb in binary_combinations:
+        #     array = np.array(comb)
+        #     canonical = self._canonical_rotation(array)
+        #     self.unique_patterns.add(tuple(canonical))
+        # print(len(self.unique_patterns))
+        # self.STAR_STATES = [np.array(p) for p in self.unique_patterns]
+        self.STAR_MOVES = np.array([(-2, 0), \
+                          (-1, -1), (-1, 0), (-1, 1), \
+                  (0, -2), (0, -1),          (0, 1), (0, 2), \
+                           (1, -1),  (1, 0), (1, 1), \
+                                     (2, 0)])
+
+        self.STATS_MOVE_VISITED = dict()
+        self.STATS_MOVE_WON = dict()
+        self.STATS_REMOVE_VISITED = dict()
+        self.STATS_REMOVE_WON = dict()
+
+        self.THIS_MOVE_VISITED = set()
+        self.THIS_REMOVE_VISITED = set()
+
+    def take_step(self, observation):
+        if isinstance(observation, dict) and "action_mask" in observation:
+            obs = observation["observation"]
+            mask = observation["action_mask"]
+
+        else:
+            raise TypeError
+        
+        cur_pos = tuple(np.argwhere(obs[:, :, 0] == 1)[0]) 
+        opp_pos = tuple(np.argwhere(obs[:, :, 1] == 1)[0]) 
+
+        # Add visited states to THIS
+        cur_star_state = np.ones(self.STATE_LEN)
+        opp_star_state = np.ones(self.STATE_LEN)
+
+        for i in range(self.STATE_LEN):
+            move = self.STAR_MOVES[i]
+            cur_consider = self._add_move(cur_pos, move)
+            opp_consider = self._add_move(opp_pos, move)
+
+            # If not in board, occupied by opponent, removed
+            if not self._pos_in_board(cur_consider):
+                cur_star_state[i] = -2
+            elif obs[:, :, 1][cur_consider] != 0:
+                cur_star_state[i] = -1
+            elif obs[:, :, 2][cur_consider] != 0:
+                cur_star_state[i] = 0 
+
+            # If not in board, occupied by self, removed
+            if not self._pos_in_board(opp_consider):
+                opp_star_state[i] = -2
+            elif obs[:, :, 0][opp_consider] != 0:
+                opp_star_state[i] = -1
+            elif obs[:, :, 2][opp_consider] != 0:
+                opp_star_state[i] = 0
+
+        rot_move = tuple(self._canonical_rotation(cur_star_state))
+        rot_remove = tuple(self._canonical_rotation(opp_star_state))
+
+        self.THIS_MOVE_VISITED.add(rot_move)
+        self.THIS_REMOVE_VISITED.add(rot_remove)
+
+
+        # Move: compute new stars for possible moves
+        cur_next_states = []
+        MOVES = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+        for move_dir in MOVES:
+            new_pos = self._add_move(cur_pos, move_dir)
+
+            if not self._pos_in_board(new_pos) \
+                or obs[:, :, 1][new_pos] != 0 \
+                or obs[:, :, 2][new_pos] != 0: 
+                cur_next_states.append(np.ones(self.STATE_LEN) * -1)
+                continue
+
+            s = np.ones(self.STATE_LEN)
+
+            for i in range(self.STATE_LEN):
+                move = self.STAR_MOVES[i]
+                consider = self._add_move(cur_pos, move)
+
+                # If not in board, occupied by opponent, removed
+                if not self._pos_in_board(consider):
+                    s[i] = -2
+                elif obs[:, :, 1][consider] != 0:
+                    s[i] = -1
+                elif obs[:, :, 2][consider] != 0:
+                    s[i] = 0
+
+            s_rot = self._canonical_rotation(s)
+            cur_next_states.append(s_rot)
+
+        # Move: pick action by UCB
+        ucb_scores = [self._ucb_score_move(s_rot) for s_rot in cur_next_states]
+        indices = [i for i, v in enumerate(ucb_scores) if v == max(ucb_scores)]
+        move_idx = random.choice(indices)
+        new_pos = self._add_move(cur_pos, MOVES[move_idx])
+
+        # Remove: construct star state
+        # opp_star_state = np.ones(self.STATE_LEN)
+
+        # for i in range(self.STATE_LEN):
+        #     move = self.STAR_MOVES[i]
+        #     opp_consider = self._add_move(opp_pos, move)
+
+        #     # If not in board, occupied by self, removed
+        #     if not self._pos_in_board(opp_consider):
+
+        #         or obs[:, :, 0][opp_consider] != 0 \
+        #         or obs[:, :, 2][opp_consider] != 0:
+                
+        #         opp_star_state[i] = 0
+
+        # Remove: construct next star states and pick best remove
+        best_remove_i = []
+        best_remove_score = -np.inf
+
+        for i in range(self.STATE_LEN):
+            if opp_star_state[i] != 1: # must be removable
+                continue
+            
+            remove_pos = self._add_move(opp_pos, self.STAR_MOVES[i])
+            if remove_pos == new_pos:
+                continue
+
+            next_opp_star_state = copy.deepcopy(opp_star_state)
+            next_opp_star_state[i] = 0
+            next_opp_star_state_rot = self._canonical_rotation(next_opp_star_state)
+            ucb_score = self._ucb_score_remove(next_opp_star_state_rot)
+            if ucb_score > best_remove_score:
+                best_remove_i = [i]
+                best_remove_score = ucb_score
+            elif ucb_score == best_remove_score:
+                best_remove_i.append(i)
+
+
+        if best_remove_i == []:
+            return np.where(mask == 1)[0][0]
+        
+        else:
+            i = random.choice(best_remove_i)
+            remove_pos = self._add_move(opp_pos, self.STAR_MOVES[i])
+            return self._encode_action(move_idx, remove_pos)
+
+
+class MCTSBiggerBot(MCTSBot):
+    """
+    Every state is a 24-square "star" around the current position
+           0
+        1  2  3
+     4  5  6  7  8
+ 9  10  11 X  12 13 14
+    15  16 17 18 19
+        20 21 22
+           23
+    """
+    def __init__(self, board_size, exploration_weight=1.0):
+        self.board_size = board_size
+        self.exploration_weight = exploration_weight
+
+        self.STATE_LEN = 24
+
+        self.ROTATIONS = np.array([
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],  # 0° (no rotation)
+            [14, 8, 13, 19, 3, 7, 12, 18, 22, 0, 2, 6, 17, 21, 23, 1, 5, 11, 16, 20, 4, 10, 15, 9],  # 90° CW
+            [23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],  # 180° CW
+            [9, 15, 10, 4, 20, 16, 11, 5, 1, 23, 21, 17, 6, 2, 0, 22, 18, 12, 7, 3, 19, 13, 8, 14]   # 270° CW
+        ])
+
+        # self.unique_patterns = set()
+
+        # # Generate binary combinations on the fly
+        # for i in range(2**self.STATE_LEN):  # Iterates over all possible binary numbers of length STATE_LEN
+        #     # Convert the number to binary representation with leading zeros
+        #     binary = [int(x) for x in f"{i:0{self.STATE_LEN}b}"]
+        #     array = np.array(binary)
+            
+        #     # Get the canonical rotation
+        #     canonical = self._canonical_rotation(array)
+            
+        #     # Add the canonical pattern to the set
+        #     self.unique_patterns.add(tuple(canonical))
+
+        # self.STAR_STATES = [np.array(p) for p in self.unique_patterns]
+        self.STAR_MOVES = np.array([(-3, 0),
+                          (-2, -1), (-2, 0), (-2, 1), \
+                (-1, -2), (-1, -1), (-1, 0), (-1, 1), (-1, 2),\
+        (0, -3), (0, -2), (0, -1),           (0, 1), (0, 2), (0, 3),\
+                (1, -2),  (1, -1),  (1, 0), (1, 1),   (1, 2),\
+                           (2, -1), (2, 0), (2, 1), \
+                                    (3, 0)])
+
+        self.STATS_MOVE_VISITED = dict()
+        self.STATS_MOVE_WON = dict()
+        self.STATS_REMOVE_VISITED = dict()
+        self.STATS_REMOVE_WON = dict()
+
+        self.THIS_MOVE_VISITED = set()
+        self.THIS_REMOVE_VISITED = set()
+
 
 class DQNBot(BaseBot):
     def __init__(self, board_size, batch_size=32, lr=0.001, gamma=0.95, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995):
