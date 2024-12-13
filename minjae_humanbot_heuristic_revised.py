@@ -245,7 +245,7 @@ class MCTSNode:
         return (self.value / self.visits) + c * math.sqrt(math.log(self.parent.visits) / self.visits)
 
 class MCTSAgent:
-    def __init__(self, board_size=BOARD_SIZE, simulations=100, prune_top_n=6, doprune = True):
+    def __init__(self, board_size=BOARD_SIZE, simulations=100, prune_top_n=8, doprune = True): #change the parameters as you wish. doprune = 1 equals pure heuristic
         self.board_size = board_size
         self.simulations = simulations
         self.prune_top_n = prune_top_n
@@ -284,6 +284,19 @@ class MCTSAgent:
                 for rem in removes:
                     action = self.encode_action(move_idx, tuple(rem))
                     legal.append(action)
+
+        if len(legal) > self.prune_top_n and self.doprune:
+            cur_p = current_player
+            if len(legal) > self.prune_top_n and self.doprune:
+                    scored_moves = []
+                    for a in legal:
+                        score = self.score_action(board, cur_p, a)
+                        scored_moves.append((score, a))
+                    # Sort moves by score descending (higher is better)
+                    scored_moves.sort(key=lambda x: x[0], reverse=True)
+                    # Keep only top prune_top_n moves
+                    legal = [m for (s, m) in scored_moves[:self.prune_top_n]]
+    
         return legal
 
     def apply_action(self, board: np.ndarray, current_player: int, action: int) -> Tuple[np.ndarray, int]:
@@ -360,14 +373,16 @@ class MCTSAgent:
         for tile in eliminated_tiles:
             tile_pos = tuple(tile)
             distance = abs(tile_pos[0] - player_pos[0]) + abs(tile_pos[1] - player_pos[1]) #math.sqrt((tile_pos[0] - player_pos[0])**2 + (tile_pos[1] - player_pos[1])**2)
-            sum_inv_dist_player += 1.0 / (distance + 1)  # +1 to avoid division by zero
+            if distance < 3:
+                sum_inv_dist_player += 1  
         
         # Calculate sum of inverses of distances from opponent's position to eliminated tiles
         sum_inv_dist_opponent = 0.0
         for tile in eliminated_tiles:
             tile_pos = tuple(tile)
             distance = abs(tile_pos[0] - opp_pos[0]) + abs(tile_pos[1] - opp_pos[1]) #math.sqrt((tile_pos[0] - opp_pos[0])**2 + (tile_pos[1] - opp_pos[1])**2)
-            sum_inv_dist_opponent += 1.0 / (distance + 1)  # +1 to avoid division by zero
+            if distance < 3:
+                sum_inv_dist_opponent += 1  
         
         # Heuristic: Opponent's proximity minus Player's proximity
         heuristic = sum_inv_dist_opponent - sum_inv_dist_player
@@ -377,15 +392,6 @@ class MCTSAgent:
         if node.untried_actions is None:
             board, cur_p = node.state
             legal = self.get_legal_actions(board, cur_p)
-            if len(legal) > self.prune_top_n and self.doprune:
-                scored_moves = []
-                for a in legal:
-                    score = self.score_action(board, cur_p, a)
-                    scored_moves.append((score, a))
-                # Sort moves by score descending (higher is better)
-                scored_moves.sort(key=lambda x: x[0], reverse=True)
-                # Keep only top prune_top_n moves
-                legal = [m for (s, m) in scored_moves[:self.prune_top_n]]
             node.untried_actions = list(legal)
 
         if len(node.untried_actions) == 0:
@@ -414,10 +420,11 @@ class MCTSAgent:
 ### Integration with the Game ###
 
 class IsolationGame:
-    def __init__(self, board_size=BOARD_SIZE, player_starting_pos=PLAYER_STARTING_POS, player0_type="human", player1_type="mcts"):
+    def __init__(self, board_size=BOARD_SIZE, player_starting_pos=PLAYER_STARTING_POS, player0_type="human", player1_type="mcts", count = 0):
         self.board_size = board_size
         self.env = raw_env(render_mode="human")  # Ensure rendering is enabled
         self.env.reset()
+        self.count = count
 
         pygame.init()
         self.screen = pygame.display.set_mode(WINDOW_SIZE)
@@ -427,7 +434,7 @@ class IsolationGame:
         self.player_types = [player0_type, player1_type]
         self.mcts_agent = None
         if "mcts" in self.player_types:
-            self.mcts_agent = MCTSAgent(board_size=self.board_size, simulations=1000, prune_top_n=8, doprune = True) #control the parameters as you wish
+            self.mcts_agent = MCTSAgent(board_size=self.board_size, simulations=50, prune_top_n=1, doprune = True) #control the parameters as you wish
 
         self.chosen_direction = None
 
@@ -471,9 +478,10 @@ class IsolationGame:
             if any(self.env.terminations.values()) or any(self.env.truncations.values()):
                 # Game ended
                 if self.env.rewards["player_0"] > 0:
-                    print("Player 1 wins! (You if you chose to play)")
+                    print("Player 1 wins! (You if you chose to play)", self.count)
                 elif self.env.rewards["player_0"] < 0:
-                    print("Player 2 (Bot) wins!")
+                    self.count += 1
+                    print("Player 2 (Bot) wins!", self.count)
                 else:
                     print("Draw!")
                 running = False
@@ -527,13 +535,15 @@ class IsolationGame:
 
             self.draw_board()
 
-        pygame.quit()
-        sys.exit()
+        #pygame.quit()
+        #sys.exit()
 
 ### Main Execution ###
 
-if __name__ == "__main__":
-    while True:
+c = 0
+for i in range(100):
+        PLAYERVSBOT = False
+        '''
         user_input = input("Is this player vs. bot or bot vs. bot? Enter P or B\n")
         if user_input in ["P", "B"]:
             print("Valid input received. Proceeding...")
@@ -544,13 +554,16 @@ if __name__ == "__main__":
             break
         else:
             print("Invalid input. Please try again.")
+        '''
 
-    if PLAYERVSBOT:
-        player0_type = "human"
-        player1_type = "mcts"
-    else:
-        player0_type = "random"
-        player1_type = "mcts"
+        if PLAYERVSBOT:
+            player0_type = "human"
+            player1_type = "mcts"
+        else:
+            player0_type = "random"
+            player1_type = "mcts"
 
-    game = IsolationGame(player0_type=player0_type, player1_type=player1_type)
-    game.run()
+        game = IsolationGame(player0_type=player0_type, player1_type=player1_type, count=c)
+        game.run()
+        c = game.count
+        
