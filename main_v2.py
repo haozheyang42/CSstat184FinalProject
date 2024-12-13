@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
         if i % batch_size == batch_size - 1:
             batch = i // batch_size
-            print("Batch {} Win Percentage: {:.2%}".format(batch, batch_wins / batch_size))
+            print("Batch {} Win Percentage: {:.0%}".format(batch, batch_wins / batch_size))
             batch_wins = 0
 
     env.close()
