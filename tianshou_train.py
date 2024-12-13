@@ -23,10 +23,11 @@ from tianshou.utils import TensorboardLogger
 from tianshou.utils.net.common import Net
 
 from tianshou_heuristic_policy import HeuristicPolicy
+from tianshou_mcts import MCTSPolicy
 
 BOARD_SIZE = (6,8)
 
-def get_env(render_mode=None, shaping=True):
+def get_env(render_mode=None, shaping=False):
     return PettingZooEnv(isolation_env.env(board_size=BOARD_SIZE, render_mode=render_mode, shaping=shaping))
 
 
@@ -80,6 +81,10 @@ def get_parser() -> argparse.ArgumentParser:
         action='store_true'
     )
     parser.add_argument(
+        '--mcts-learner',
+        action='store_true'
+    )
+    parser.add_argument(
         '--agent-id',
         type=int,
         default=2,
@@ -122,22 +127,25 @@ def get_agents(
     args.state_shape = observation_space.shape or observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
     if agent_learn is None:
-        # model
-        net = Net(
-            args.state_shape,
-            args.action_shape,
-            hidden_sizes=args.hidden_sizes,
-            device=args.device
-        ).to(args.device)
-        if optim is None:
-            optim = torch.optim.Adam(net.parameters(), lr=args.lr)
-        agent_learn = DQNPolicy(
-            net,
-            optim,
-            args.gamma,
-            args.n_step,
-            target_update_freq=args.target_update_freq
-        )
+        if args.mcts_learner:
+            agent_learn = MCTSPolicy(board_size=BOARD_SIZE)
+        else: # DQN
+            # model
+            net = Net(
+                args.state_shape,
+                args.action_shape,
+                hidden_sizes=args.hidden_sizes,
+                device=args.device
+            ).to(args.device)
+            if optim is None:
+                optim = torch.optim.Adam(net.parameters(), lr=args.lr)
+            agent_learn = DQNPolicy(
+                net,
+                optim,
+                args.gamma,
+                args.n_step,
+                target_update_freq=args.target_update_freq
+            )
 
         if args.train_on_self:
             print("Train on self -- learner")
