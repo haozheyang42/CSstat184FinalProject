@@ -1,5 +1,6 @@
 import isolation_env
 from bots import RandomBot, HeuristicBot, MCTSBot
+import matplotlib.pyplot as plt
 
 BOARD_SIZE = (6,8)
 
@@ -46,6 +47,7 @@ if __name__ == "__main__":
     env = isolation_env.env(board_size=BOARD_SIZE, render_mode=None)
     env.reset()
     
+    batch_win_rates = []
     batch_wins = 0
     batch_size = 100
     print("Each Batch contains {} games".format(batch_size))
@@ -59,7 +61,10 @@ if __name__ == "__main__":
 
         if i % batch_size == batch_size - 1:
             batch = i // batch_size
-            print("Batch {} Win Percentage: {:.0%}".format(batch, batch_wins / batch_size))
+            batch_win_rate = batch_wins / batch_size
+            print("Batch {} Win Percentage: {:.0%}".format(batch, batch_win_rate))
+            batch_win_rates.append(batch_win_rate)
             batch_wins = 0
 
     env.close()
+    plt.plot(batch_win_rates)

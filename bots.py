@@ -257,7 +257,8 @@ class MCTSBot(BaseBot):
 
         # Move: pick action by UCB
         ucb_scores = [self._ucb_score_move(s_rot) for s_rot in cur_next_states]
-        move_idx = ucb_scores.index(max(ucb_scores))
+        indices = [i for i, v in enumerate(ucb_scores) if v == max(ucb_scores)]
+        move_idx = random.choice(indices)
         new_pos = self._add_move(cur_pos, MOVES[move_idx])
 
         # Remove: construct star state
@@ -275,7 +276,7 @@ class MCTSBot(BaseBot):
                 opp_star_state[i] = 0
 
         # Remove: construct next star states and pick best remove
-        best_remove_i = None
+        best_remove_i = []
         best_remove_score = -np.inf
 
         for i in range(12):
@@ -291,14 +292,18 @@ class MCTSBot(BaseBot):
             next_opp_star_state_rot = self._canonical_rotation(next_opp_star_state)
             ucb_score = self._ucb_score_remove(next_opp_star_state_rot)
             if ucb_score > best_remove_score:
-                best_remove_i = i
+                best_remove_i = [i]
                 best_remove_score = ucb_score
+            elif ucb_score == best_remove_score:
+                best_remove_i.append(i)
 
-        if best_remove_i is None:
+
+        if best_remove_i == []:
             return np.where(mask == 1)[0][0]
         
         else:
-            remove_pos = self._add_move(opp_pos, self.STAR_MOVES[best_remove_i])
+            i = random.choice(best_remove_i)
+            remove_pos = self._add_move(opp_pos, self.STAR_MOVES[i])
             return self._encode_action(move_idx, remove_pos)
         
     def learn(self, reward):
