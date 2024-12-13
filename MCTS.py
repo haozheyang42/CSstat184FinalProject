@@ -80,7 +80,7 @@ def mcts(env, num_simulations=1000, exploration_weight=1.0):
                 backpropagate(child, reward)
     return root.best_child(exploration_weight).state["action"]
 
-def train_and_save_videos(num_games=2, filename_prefix="gameplay"):
+def train_and_save_videos(num_games=1, filename_prefix="gameplay"):
     """
     Train the agent on multiple games and save gameplay as videos.
     
