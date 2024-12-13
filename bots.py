@@ -49,6 +49,10 @@ class BaseBot():
 
 
 class HeuristicBot(BaseBot):
+    """
+    Always moves itself to maximize number of free tiles adjacent to self
+    And removes tile to minimize number of free tiles adjacent to opponent
+    """
     def __init__(self, board_size):
         super().__init__(board_size=board_size)
         pass
@@ -108,6 +112,21 @@ class HeuristicBot(BaseBot):
         
 
 class MCTSBot(BaseBot):
+    """
+    Every state is a 12-square "star" around the current position
+        0
+    1  2  3
+    4  5  X  6  7
+    8  9  10
+        11
+
+    There are 2**12 possible states for the current position, and
+    2**12 for the opponent position
+
+    Further reduce number of states to 1044 leveraging rotations
+
+    An index is 1 iff it is in board, not removed, and not occupied by a player
+    """
     def __init__(self, board_size, exploration_weight=1.0):
         super().__init__(board_size=board_size)
         self.exploration_weight = exploration_weight
