@@ -230,7 +230,9 @@ class MCTSBot(BaseBot):
         cur_next_states = []
         MOVES = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
-        for new_pos in [self._add_move(cur_pos, move) for move in MOVES]:
+        for move_dir in MOVES:
+            new_pos = self._add_move(cur_pos, move_dir)
+
             if not self._pos_in_board(new_pos) \
                 or obs[:, :, 1][new_pos] != 0 \
                 or obs[:, :, 2][new_pos] != 0: 
@@ -257,7 +259,6 @@ class MCTSBot(BaseBot):
         ucb_scores = [self._ucb_score_move(s_rot) for s_rot in cur_next_states]
         move_idx = ucb_scores.index(max(ucb_scores))
         new_pos = self._add_move(cur_pos, MOVES[move_idx])
-        # self.visited_move_states.add(cur_next_states[move_idx])
 
         # Remove: construct star state
         opp_star_state = np.ones(12)
@@ -287,14 +288,11 @@ class MCTSBot(BaseBot):
 
             next_opp_star_state = copy.deepcopy(opp_star_state)
             next_opp_star_state[i] = 0
-
             next_opp_star_state_rot = self._canonical_rotation(next_opp_star_state)
             ucb_score = self._ucb_score_remove(next_opp_star_state_rot)
             if ucb_score > best_remove_score:
                 best_remove_i = i
                 best_remove_score = ucb_score
-        # if random.random() < 0.01:
-        #     print(best_remove_score)
 
         if best_remove_i is None:
             return np.where(mask == 1)[0][0]
