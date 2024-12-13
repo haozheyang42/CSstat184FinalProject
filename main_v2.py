@@ -1,18 +1,17 @@
 import isolation_env
-from bots import RandomBot, HeuristicBot, MCTSBot
+from bots import RandomBot, HeuristicBot, MCTSBot, DQNBot
 import matplotlib.pyplot as plt
 
 BOARD_SIZE = (6,8)
 
-def run_one_game(bots):
-
+def run_one_game(bots, env):
     for agent in env.agent_iter():
-        id = env.agents.index(agent)
+        
+        id = ['player_0', 'player_1'].index(agent)
 
         observation, reward, termination, truncation, info = env.last()
-
         if termination or truncation:
-            bots[id].learn(reward) # TODO
+            bots[id].learn(observation, reward)
             action = None
 
             if reward == 1:
@@ -29,18 +28,19 @@ def run_one_game(bots):
 if __name__ == "__main__":
     bots = []
 
-    p0 = input("Enter Random, Heuristic, or MCTS: ")
-    p1 = input("Enter Random, Heuristic, or MCTS: ")
+    p0 = input("Enter Random, Heuristic, MCTS, DQN: ")
+    p1 = input("Enter Random, Heuristic, MCTS, DQN: ")
 
     for p in (p0, p1):
-        match p:
-            case "Random":
+        if p == "Random":
                 bots.append(RandomBot())
-            case "Heuristic":
+        elif p == "Heuristic":
                 bots.append(HeuristicBot(board_size=BOARD_SIZE))
-            case "MCTS":
+        elif p == "MCTS":
                 bots.append(MCTSBot(board_size=BOARD_SIZE))
-            case _:
+        elif p == "DQN":
+                bots.append(DQNBot(board_size=BOARD_SIZE))
+        else:
                 raise ValueError
             
     games = int(input("Enter number of games: "))
@@ -53,7 +53,7 @@ if __name__ == "__main__":
     print("Each Batch contains {} games".format(batch_size))
 
     for i in range(games):
-        winner = run_one_game(bots)
+        winner = run_one_game(bots, env)
         env.reset()
         
         if winner == "player_0":

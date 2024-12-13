@@ -2,6 +2,10 @@ import random
 import numpy as np
 from itertools import product
 import copy
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from collections import deque
+
 
 class RandomBot():
     def __init__(self):
@@ -15,7 +19,7 @@ class RandomBot():
         else:
             raise TypeError
         
-    def learn(self, reward):
+    def learn(self, observation, reward):
         pass
 
 
@@ -107,7 +111,7 @@ class HeuristicBot(BaseBot):
         
         return best_action
 
-    def learn(self, reward):
+    def learn(self, observation, reward):
         pass
         
 
@@ -306,7 +310,7 @@ class MCTSBot(BaseBot):
             remove_pos = self._add_move(opp_pos, self.STAR_MOVES[i])
             return self._encode_action(move_idx, remove_pos)
         
-    def learn(self, reward):
+    def learn(self, observation, reward):
         # Update statistics
         for k, v in self.THIS_MOVE_VISITED.items():
             if v > 0:
@@ -326,4 +330,97 @@ class MCTSBot(BaseBot):
         
         for k in self.THIS_REMOVE_VISITED:
             self.THIS_REMOVE_VISITED[k] = 0
+
+class DQNBot(BaseBot):
+    def __init__(self, board_size, batch_size=32, lr=0.001, gamma=0.95, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995):
+        super().__init__(board_size=board_size)
+        self.action_size = 4 * (board_size[0] * board_size[1])
+        self.memory = deque(maxlen=20000)
+        self.batch_size = batch_size
+        self.lr = lr
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.epsilon_min = epsilon_min
+        self.epsilon_decay = epsilon_decay
+        self.model = self._build_model()
+        self.target_model = self._build_model()
+        self.target_update_frequency = 500
+        self.steps = 0
+        self._update_target_model()
+
+        self.prev_obs = None
+        self.prev_action = None
+
+    def _build_model(self):
+        model = models.Sequential([
+            layers.Input(shape=(*self.board_size, 3)),
+            layers.Conv2D(32, (3, 3), activation='relu'),
+            layers.Conv2D(64, (3, 3), activation='relu'),
+            layers.Flatten(),
+            layers.Dense(64, activation='relu'),
+            layers.Dense(self.action_size, activation='relu')
+        ])
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.lr),
+                      loss='mse')
+        return model
     
+    def _update_target_model(self):
+        self.target_model.set_weights(self.model.get_weights())
+
+    def take_step(self, observation):
+        if isinstance(observation, dict) and "action_mask" in observation:
+            obs = observation["observation"]
+            mask = observation["action_mask"]
+        else:
+            raise TypeError("Invalid observation format")
+
+        if np.random.rand() <= self.epsilon:
+            action = random.choice([i for i, v in enumerate(mask) if v == 1])
+            
+        else:
+            q_values = self.model.predict(np.expand_dims(obs, axis=0))[0]
+            valid_q_values = (q_values + 0.0001) * mask # perturb to avoid illegal action
+            action = np.argmax(valid_q_values)
+        
+        if self.prev_obs is not None and self.prev_action is not None:
+            self._remember(self.prev_obs, self.prev_action, 0, obs, False)
+        
+        self.prev_obs = obs
+        self.prev_action = action
+        
+        return action
+
+    def _remember(self, obs, action, reward, next_obs, done):
+        self.memory.append((obs, action, reward, next_obs, done))
+
+    def _replay(self):
+        if len(self.memory) < self.batch_size:
+            return
+
+        minibatch = random.sample(self.memory, self.batch_size)
+        for state, action, reward, next_state, done in minibatch:
+            target = self.model.predict(np.expand_dims(state, axis=0))[0]
+            if done:
+                target[action] = reward
+            else:
+                t = self.target_model.predict(np.expand_dims(next_state, axis=0))[0]
+                target[action] = reward + self.gamma * np.amax(t)
+            self.model.fit(np.expand_dims(state, axis=0), np.expand_dims(target, axis=0), epochs=1, verbose=0)
+
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+
+    def learn(self, observation, reward):
+        if isinstance(observation, dict) and "action_mask" in observation:
+            obs = observation["observation"]
+            mask = observation["action_mask"]
+        else:
+            raise TypeError("Invalid observation format")
+        
+        self._remember(self.prev_obs, self.prev_action, reward, obs, True)
+        self.prev_obs, self.prev_action = None, None
+        self._replay()
+
+        self.steps += 1
+        if self.steps % self.target_update_frequency == 0:
+            self._update_target_model()
