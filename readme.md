@@ -1,4 +1,4 @@
 Run the two commands first:
 
-micromamba create -f environment.yml
+micromamba create -f env.yml
 micromamba activate 184-final
