@@ -61,7 +61,7 @@ class HeuristicBot(BaseBot):
         super().__init__(board_size=board_size)
         pass
     
-    def take_step(self, observation):
+    def take_step(self, observation, *args):
         if isinstance(observation, dict) and "action_mask" in observation:
             obs = observation["observation"]
             mask = observation["action_mask"]
@@ -144,15 +144,6 @@ class MCTSBot(BaseBot):
             [4, 8, 5, 1, 11, 9, 2, 0, 10, 6, 3, 7]   # 270° CW
         ])
 
-        # binary_combinations = list(product([0, 1], repeat=self.STATE_LEN))
-
-        # self.unique_patterns = set()
-        # for comb in binary_combinations:
-        #     array = np.array(comb)
-        #     canonical = self._canonical_rotation(array)
-        #     self.unique_patterns.add(tuple(canonical))
-
-        # self.STAR_STATES = [np.array(p) for p in self.unique_patterns]
         self.STAR_MOVES = np.array([(-2, 0), \
                           (-1, -1), (-1, 0), (-1, 1), \
                   (0, -2), (0, -1),          (0, 1), (0, 2), \
@@ -170,7 +161,6 @@ class MCTSBot(BaseBot):
     def _canonical_rotation(self, array):
         """Find the lexicographically smallest rotation of a given array"""
         assert(len(array) == self.STATE_LEN)
-        # assert(all(array[i] in (0,1) for i in range(self.STATE_LEN)))
         rotated = [tuple(array[rotation]) for rotation in self.ROTATIONS]
         return np.array(min(rotated))
 
@@ -261,20 +251,6 @@ class MCTSBot(BaseBot):
         move_idx = random.choice(indices)
         new_pos = self._add_move(cur_pos, MOVES[move_idx])
 
-        # Remove: construct star state
-        # opp_star_state = np.ones(self.STATE_LEN)
-
-        # for i in range(self.STATE_LEN):
-        #     move = self.STAR_MOVES[i]
-        #     opp_consider = self._add_move(opp_pos, move)
-
-        #     # If not in board, occupied by self, removed
-        #     if not self._pos_in_board(opp_consider) \
-        #         or obs[:, :, 0][opp_consider] != 0 \
-        #         or obs[:, :, 2][opp_consider] != 0:
-                
-        #         opp_star_state[i] = 0
-
         # Remove: construct next star states and pick best remove
         best_remove_i = []
         best_remove_score = -np.inf
@@ -330,52 +306,7 @@ class MCTSRicherBot(MCTSBot):
     1: Vacant
     """
     def __init__(self, board_size, exploration_weight=1.0):
-        super().__init__(board_size=board_size)
-        self.exploration_weight = exploration_weight
-
-        self.STATE_LEN = 12
-
-        self.ROTATIONS = np.array([
-            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],  # 0° (no rotation)
-            [7, 3, 6, 10, 0, 2, 9, 11, 1, 5, 8, 4],  # 90° CW
-            [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],  # 180° CW
-            [4, 8, 5, 1, 11, 9, 2, 0, 10, 6, 3, 7]   # 270° CW
-        ])
-
-        # permutations = list(product([-2, 0, 1], repeat=12))
-
-        # permutations_with_one_3 = []
-        # for i in range(12):
-        #     for perm in product([-2, 0, 1], repeat=11):
-        #         # Insert '3' at position i
-        #         new_perm = list(perm)
-        #         new_perm.insert(i, -1)
-        #         permutations_with_one_3.append(tuple(new_perm))
-
-        # # Combine both lists
-        # binary_combinations = permutations + permutations_with_one_3
-        # print(len(binary_combinations))
-
-        # self.unique_patterns = set()
-        # for comb in binary_combinations:
-        #     array = np.array(comb)
-        #     canonical = self._canonical_rotation(array)
-        #     self.unique_patterns.add(tuple(canonical))
-        # print(len(self.unique_patterns))
-        # self.STAR_STATES = [np.array(p) for p in self.unique_patterns]
-        self.STAR_MOVES = np.array([(-2, 0), \
-                          (-1, -1), (-1, 0), (-1, 1), \
-                  (0, -2), (0, -1),          (0, 1), (0, 2), \
-                           (1, -1),  (1, 0), (1, 1), \
-                                     (2, 0)])
-
-        self.STATS_MOVE_VISITED = dict()
-        self.STATS_MOVE_WON = dict()
-        self.STATS_REMOVE_VISITED = dict()
-        self.STATS_REMOVE_WON = dict()
-
-        self.THIS_MOVE_VISITED = set()
-        self.THIS_REMOVE_VISITED = set()
+        super().__init__(board_size=board_size, exploration_weight=exploration_weight)
 
     def take_step(self, observation):
         if isinstance(observation, dict) and "action_mask" in observation:
@@ -456,21 +387,6 @@ class MCTSRicherBot(MCTSBot):
         move_idx = random.choice(indices)
         new_pos = self._add_move(cur_pos, MOVES[move_idx])
 
-        # Remove: construct star state
-        # opp_star_state = np.ones(self.STATE_LEN)
-
-        # for i in range(self.STATE_LEN):
-        #     move = self.STAR_MOVES[i]
-        #     opp_consider = self._add_move(opp_pos, move)
-
-        #     # If not in board, occupied by self, removed
-        #     if not self._pos_in_board(opp_consider):
-
-        #         or obs[:, :, 0][opp_consider] != 0 \
-        #         or obs[:, :, 2][opp_consider] != 0:
-                
-        #         opp_star_state[i] = 0
-
         # Remove: construct next star states and pick best remove
         best_remove_i = []
         best_remove_score = -np.inf
@@ -515,8 +431,7 @@ class MCTSBiggerBot(MCTSBot):
            23
     """
     def __init__(self, board_size, exploration_weight=1.0):
-        self.board_size = board_size
-        self.exploration_weight = exploration_weight
+        super().__init__(board_size=board_size, exploration_weight=exploration_weight)
 
         self.STATE_LEN = 24
 
@@ -527,21 +442,6 @@ class MCTSBiggerBot(MCTSBot):
             [9, 15, 10, 4, 20, 16, 11, 5, 1, 23, 21, 17, 6, 2, 0, 22, 18, 12, 7, 3, 19, 13, 8, 14]   # 270° CW
         ])
 
-        # self.unique_patterns = set()
-
-        # # Generate binary combinations on the fly
-        # for i in range(2**self.STATE_LEN):  # Iterates over all possible binary numbers of length STATE_LEN
-        #     # Convert the number to binary representation with leading zeros
-        #     binary = [int(x) for x in f"{i:0{self.STATE_LEN}b}"]
-        #     array = np.array(binary)
-            
-        #     # Get the canonical rotation
-        #     canonical = self._canonical_rotation(array)
-            
-        #     # Add the canonical pattern to the set
-        #     self.unique_patterns.add(tuple(canonical))
-
-        # self.STAR_STATES = [np.array(p) for p in self.unique_patterns]
         self.STAR_MOVES = np.array([(-3, 0),
                           (-2, -1), (-2, 0), (-2, 1), \
                 (-1, -2), (-1, -1), (-1, 0), (-1, 1), (-1, 2),\
@@ -549,15 +449,6 @@ class MCTSBiggerBot(MCTSBot):
                 (1, -2),  (1, -1),  (1, 0), (1, 1),   (1, 2),\
                            (2, -1), (2, 0), (2, 1), \
                                     (3, 0)])
-
-        self.STATS_MOVE_VISITED = dict()
-        self.STATS_MOVE_WON = dict()
-        self.STATS_REMOVE_VISITED = dict()
-        self.STATS_REMOVE_WON = dict()
-
-        self.THIS_MOVE_VISITED = set()
-        self.THIS_REMOVE_VISITED = set()
-
 
 class DQNBot(BaseBot):
     def __init__(self, board_size, batch_size=32, lr=0.001, gamma=0.95, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995):
@@ -586,7 +477,7 @@ class DQNBot(BaseBot):
             layers.Conv2D(64, (3, 3), activation='relu'),
             layers.Flatten(),
             layers.Dense(64, activation='relu'),
-            layers.Dense(self.action_size, activation='relu')
+            layers.Dense(self.action_size)
         ])
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.lr),
                       loss='mse')
@@ -595,7 +486,7 @@ class DQNBot(BaseBot):
     def _update_target_model(self):
         self.target_model.set_weights(self.model.get_weights())
 
-    def take_step(self, observation):
+    def take_step(self, observation, reward):
         if isinstance(observation, dict) and "action_mask" in observation:
             obs = observation["observation"]
             mask = observation["action_mask"]
@@ -607,11 +498,11 @@ class DQNBot(BaseBot):
             
         else:
             q_values = self.model.predict(np.expand_dims(obs, axis=0))[0]
-            valid_q_values = (q_values + 0.0001) * mask # perturb to avoid illegal action
-            action = np.argmax(valid_q_values)
-        
+            q_values[mask == 0] = -np.inf # perturb to avoid illegal action
+            action = np.argmax(q_values)
+            
         if self.prev_obs is not None and self.prev_action is not None:
-            self._remember(self.prev_obs, self.prev_action, 0, obs, False)
+            self._remember(self.prev_obs, self.prev_action, reward, obs, False)
         
         self.prev_obs = obs
         self.prev_action = action
@@ -639,16 +530,104 @@ class DQNBot(BaseBot):
             self.epsilon *= self.epsilon_decay
 
     def learn(self, observation, reward):
-        if isinstance(observation, dict) and "action_mask" in observation:
-            obs = observation["observation"]
-            mask = observation["action_mask"]
-        else:
-            raise TypeError("Invalid observation format")
+        obs = observation["observation"]
+        mask = observation["action_mask"]
         
         self._remember(self.prev_obs, self.prev_action, reward, obs, True)
         self.prev_obs, self.prev_action = None, None
+        
         self._replay()
 
         self.steps += 1
         if self.steps % self.target_update_frequency == 0:
             self._update_target_model()
+
+
+from collections import defaultdict
+
+class QStarBot(BaseBot):
+    def __init__(self, board_size, learning_rate=0.1, discount_factor=0.9, epsilon=0.1):
+        super().__init__(board_size=board_size)
+        self.learning_rate = learning_rate
+        self.discount_factor = discount_factor
+        self.epsilon = epsilon
+        self.q_table = defaultdict(lambda: defaultdict(float))
+        self.STATE_LEN = 12
+        self.ROTATIONS = np.array([
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],  # 0° (no rotation)
+            [7, 3, 6, 10, 0, 2, 9, 11, 1, 5, 8, 4],  # 90° CW
+            [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0],  # 180° CW
+            [4, 8, 5, 1, 11, 9, 2, 0, 10, 6, 3, 7]   # 270° CW
+        ])
+        self.STAR_MOVES = np.array([(-2, 0),
+                                    (-1, -1), (-1, 0), (-1, 1),
+                                    (0, -2), (0, -1), (0, 1), (0, 2),
+                                    (1, -1), (1, 0), (1, 1),
+                                    (2, 0)])
+        self.prev_state = None
+        self.prev_action = None
+
+    def _canonical_rotation(self, array):
+        """Find the lexicographically smallest rotation of a given array"""
+        assert(len(array) == self.STATE_LEN)
+        rotated = [tuple(array[rotation]) for rotation in self.ROTATIONS]
+        return np.array(min(rotated))
+
+    def _get_state(self, observation):
+        obs = observation["observation"]
+        cur_pos = tuple(np.argwhere(obs[:, :, 0] == 1)[0])
+        opp_pos = tuple(np.argwhere(obs[:, :, 1] == 1)[0])
+
+        cur_star_state = np.ones(self.STATE_LEN)
+        opp_star_state = np.ones(self.STATE_LEN)
+
+        for i in range(self.STATE_LEN):
+            move = self.STAR_MOVES[i]
+            cur_consider = self._add_move(cur_pos, move)
+            opp_consider = self._add_move(opp_pos, move)
+
+            if not self._pos_in_board(cur_consider) \
+                    or obs[:, :, 1][cur_consider] != 0 \
+                    or obs[:, :, 2][cur_consider] != 0:
+                cur_star_state[i] = 0
+
+            if not self._pos_in_board(opp_consider) \
+                    or obs[:, :, 0][opp_consider] != 0 \
+                    or obs[:, :, 2][opp_consider] != 0:
+                opp_star_state[i] = 0
+
+        rot_move = tuple(self._canonical_rotation(cur_star_state))
+        rot_remove = tuple(self._canonical_rotation(opp_star_state))
+
+        return (rot_move, rot_remove)
+
+    def take_step(self, observation):
+        state = self._get_state(observation)
+        mask = observation["action_mask"]
+
+        if random.random() < self.epsilon:
+            action = random.choice([i for i, v in enumerate(mask) if v == 1])
+        else:
+            q_values = self.q_table[state]
+            valid_actions = [i for i, v in enumerate(mask) if v == 1]
+            action = max(valid_actions, key=lambda a: q_values[a])
+
+        self.prev_state = state
+        self.prev_action = action
+
+        return action
+
+    def learn(self, observation, reward):
+        if self.prev_state is None or self.prev_action is None:
+            return
+
+        next_state = self._get_state(observation)
+        
+        current_q = self.q_table[self.prev_state][self.prev_action]
+        next_max_q = max(self.q_table[next_state].values()) if self.q_table[next_state] else 0
+
+        new_q = current_q + self.learning_rate * (reward + self.discount_factor * next_max_q - current_q)
+        self.q_table[self.prev_state][self.prev_action] = new_q
+
+        self.prev_state = None
+        self.prev_action = None
